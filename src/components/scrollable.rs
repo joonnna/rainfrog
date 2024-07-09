@@ -16,6 +16,12 @@ pub enum ScrollDirection {
 }
 
 #[derive(Debug, Clone, Default)]
+struct MaxOffsets {
+  max_x_offset: u16,
+  max_y_offset: u16,
+}
+
+#[derive(Debug, Clone, Default)]
 pub struct Scrollable<'a> {
   child_buffer: Buffer,
   parent_area: Rect,
@@ -23,6 +29,8 @@ pub struct Scrollable<'a> {
   x_offset: u16,
   y_offset: u16,
   max_offsets: MaxOffsets,
+  requested_height: u16,
+  available_height: u16,
 }
 
 impl<'a> Scrollable<'a> {
@@ -34,21 +42,52 @@ impl<'a> Scrollable<'a> {
       x_offset: 0,
       y_offset: 0,
       max_offsets: MaxOffsets { max_x_offset: 0, max_y_offset: 0 },
+      requested_height: 0,
+      available_height: 0,
     }
   }
 
-  pub fn child(&mut self, child_widget: Box<dyn WidgetRef>, max_width: u16, max_height: u16) -> &mut Self {
-    let mut buf = Buffer::empty(Rect::new(0, 0, max_width, max_height));
-    child_widget.render_ref(buf.area, &mut buf);
+  pub fn child<R: Fn(Rect, &mut Buffer)>(
+    &mut self,
+    requested_width: u16,
+    requested_height: u16,
+    render_child: R,
+  ) -> &mut Self {
+    log::info!("requested width, height: {} {}", requested_width, requested_height);
+    let mut wide_buf = Buffer::empty(Rect::new(0, 0, std::cmp::min(u16::MAX.saturating_div(10), requested_width), 10));
+    render_child(wide_buf.area, &mut wide_buf);
+    wide_buf = clamp(wide_buf);
+    let needed_width = wide_buf.area.width;
+    let available_height = u16::MAX.saturating_div(needed_width);
+    log::info!("needed width: {}", needed_width);
+    log::info!("available height: {}", available_height);
+    let mut buf = Buffer::empty(Rect::new(0, 0, needed_width, available_height));
+    render_child(buf.area, &mut buf);
     let child_buffer = clamp(buf);
     log::info!("child buffer: {:?}", child_buffer.area);
     self.child_buffer = child_buffer;
+    self.available_height = available_height;
+    self.requested_height = requested_height;
     self
   }
 
-  pub fn block(&mut self, block: Block<'a>) -> &mut Self {
-    self.block = Some(block);
-    self
+  fn get_max_offsets(&self, child_buffer: &Buffer, parent_area: &Rect, parent_block: &Option<Block>) -> MaxOffsets {
+    parent_block.render_ref(*parent_area, &mut child_buffer.clone());
+    let render_area = parent_block.inner_if_some(*parent_area);
+    if render_area.is_empty() {
+      return MaxOffsets { max_x_offset: 0, max_y_offset: 0 };
+    }
+    let parent_width = render_area.width;
+    let parent_height = render_area.height;
+    let content_width = child_buffer.area.width;
+    let x_diff = content_width.saturating_sub(parent_width);
+    let y_diff = self.requested_height.saturating_sub(parent_height);
+
+    MaxOffsets { max_x_offset: x_diff, max_y_offset: y_diff }
+  }
+
+  pub fn get_requested_child_offset(&self) -> u16 {
+    self.y_offset.saturating_add(self.child_buffer.area.height).saturating_sub(self.available_height)
   }
 
   pub fn scroll(&mut self, direction: ScrollDirection) -> &mut Self {
@@ -60,12 +99,18 @@ impl<'a> Scrollable<'a> {
       ScrollDirection::Up => self.y_offset = self.y_offset.saturating_sub(1),
       ScrollDirection::Down => self.y_offset = Ord::min(self.y_offset.saturating_add(1), self.max_offsets.max_y_offset),
     }
+    log::info!("offsets: {} {}", self.x_offset, self.y_offset);
     self
   }
 
   pub fn reset_scroll(&mut self) -> &mut Self {
     self.x_offset = 0;
     self.y_offset = 0;
+    self
+  }
+
+  pub fn block(&mut self, block: Block<'a>) -> &mut Self {
+    self.block = Some(block);
     self
   }
 
@@ -115,7 +160,7 @@ impl<'a> Scrollable<'a> {
 impl<'a> Component for Scrollable<'a> {
   fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
     self.parent_area = area;
-    self.max_offsets = get_max_offsets(&self.child_buffer, &self.parent_area, &self.block);
+    self.max_offsets = self.get_max_offsets(&self.child_buffer, &self.parent_area, &self.block);
     f.render_widget(self.widget(), area);
     let vertical_scrollbar = Scrollbar::new(ScrollbarOrientation::VerticalRight).symbols(scrollbar::VERTICAL);
     let mut vertical_scrollbar_state =
@@ -157,36 +202,14 @@ impl<'a> Component for Scrollable<'a> {
   }
 }
 
-#[derive(Debug, Clone, Default)]
-struct MaxOffsets {
-  max_x_offset: u16,
-  max_y_offset: u16,
-}
-
-fn get_max_offsets(child_buffer: &Buffer, parent_area: &Rect, parent_block: &Option<Block>) -> MaxOffsets {
-  parent_block.render_ref(*parent_area, &mut child_buffer.clone());
-  let render_area = parent_block.inner_if_some(*parent_area);
-  if render_area.is_empty() {
-    return MaxOffsets { max_x_offset: 0, max_y_offset: 0 };
-  }
-  let parent_width = render_area.width;
-  let parent_height = render_area.height;
-  let content_width = child_buffer.area.width;
-  let content_height = child_buffer.area.height;
-  let x_diff = content_width.saturating_sub(parent_width);
-  let y_diff = content_height.saturating_sub(parent_height);
-
-  MaxOffsets { max_x_offset: x_diff, max_y_offset: y_diff }
-}
-
 fn clamp(buf: Buffer) -> Buffer {
   let height = buf.area.height;
   let width = buf.area.width;
-  log::info!("height, width: {} {}", height, width);
+  log::info!("width, height: {} {}", width, height);
   let mut used_height: u16 = 0;
   let mut used_width: u16 = 0;
   for y in (0..height).rev() {
-    let row = get_row(&buf.content, y, width);
+    let row = get_row(&buf.content, y as usize, width as usize);
     for x in (0..width).rev() {
       let cell = &row[x as usize];
       if cell.symbol() != " " {
@@ -196,9 +219,9 @@ fn clamp(buf: Buffer) -> Buffer {
     }
   }
   let mut content: Vec<ratatui::buffer::Cell> = Vec::new();
-  log::info!("used height, width: {} {}", used_height, used_width);
+  log::info!("used width, height: {} {}", used_width, used_height);
   for y in 0..used_height {
-    let row = get_row(&buf.content, y, width);
+    let row = get_row(&buf.content, y as usize, width as usize);
     for x in 0..used_width {
       content.push(row[x as usize].to_owned());
     }
@@ -230,8 +253,8 @@ impl<'a> Widget for Renderer<'a> {
     let max_x = Ord::min(area.x.saturating_add(area.width), area.x.saturating_add(content_width));
     let max_y = Ord::min(area.y.saturating_add(area.height), area.y.saturating_add(content_height));
     for y in area.y..max_y {
-      let content_y = y + scrollable.y_offset - area.y;
-      let row = get_row(&scrollable.child_buffer.content, content_y, content_width);
+      let content_y = y + scrollable.get_requested_child_offset().saturating_sub(scrollable.y_offset) - area.y;
+      let row = get_row(&scrollable.child_buffer.content, content_y as usize, content_width as usize);
       for x in area.x..max_x {
         let content_x = x + scrollable.x_offset - area.x;
         let cell = &row[content_x as usize];
@@ -241,6 +264,6 @@ impl<'a> Widget for Renderer<'a> {
   }
 }
 
-fn get_row(content: &[Cell], row: u16, width: u16) -> Vec<Cell> {
-  content[((row * width) as usize)..(((row + 1) * width) as usize)].to_vec()
+fn get_row(content: &[Cell], row: usize, width: usize) -> Vec<Cell> {
+  content[(row.saturating_mul(width))..((row + 1).saturating_mul(width))].to_vec()
 }

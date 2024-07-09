@@ -24,10 +24,10 @@ use crate::{
   tui::Event,
 };
 
-pub enum DataState {
+pub enum DataState<'a> {
   NoResults,
   Blank,
-  HasResults,
+  HasResults(Table<'a>, u16, u16),
   Error(DbError),
 }
 
@@ -44,7 +44,7 @@ pub struct Data<'a> {
   command_tx: Option<UnboundedSender<Action>>,
   config: Config,
   scrollable: Scrollable<'a>,
-  data_state: DataState,
+  data_state: DataState<'a>,
   state: Arc<Mutex<AppState>>,
 }
 
@@ -56,6 +56,17 @@ impl<'a> Data<'a> {
       scrollable: Scrollable::default(),
       data_state: DataState::Blank,
       state,
+    }
+  }
+
+  pub fn update_child_after_scroll(&mut self) {
+    if let DataState::HasResults(table, requested_width, requested_height) = &self.data_state {
+      let table_state =
+        TableState::new().with_offset(self.scrollable.get_requested_child_offset().saturating_div(2) as usize);
+      self.scrollable.child(*requested_width, *requested_height, |area, buf| {
+        log::info!("updated table state: {:?}", table_state.clone());
+        ratatui::widgets::StatefulWidgetRef::render_ref(table, area, buf, &mut table_state.clone())
+      });
     }
   }
 }
@@ -75,12 +86,16 @@ impl<'a> SettableDataTable<'a> for Data<'a> {
           let value_rows = rows.iter().map(|r| Row::new(row_to_vec(r)).bottom_margin(1)).collect::<Vec<Row>>();
           let buf_table =
             Table::default().rows(value_rows).header(header_row).style(Style::default()).column_spacing(1);
-          self.scrollable.child(
-            Box::new(buf_table),
-            16_u16.saturating_mul(headers.len() as u16),
-            4_u16.saturating_mul(rows.len() as u16),
+          self.data_state = DataState::HasResults(
+            buf_table,
+            40_u16.saturating_mul(headers.len() as u16),
+            2_u16.saturating_mul(rows.len() as u16),
           );
-          self.data_state = DataState::HasResults;
+          if let DataState::HasResults(table, requested_width, requested_height) = &self.data_state {
+            self.scrollable.child(*requested_width, *requested_height, |area, buf| {
+              ratatui::widgets::WidgetRef::render_ref(table, area, buf)
+            });
+          }
         }
       },
       Some(Err(e)) => {
@@ -105,8 +120,7 @@ impl<'a> Component for Data<'a> {
   }
 
   fn handle_events(&mut self, event: Option<Event>) -> Result<Option<Action>> {
-    let state = self.state.lock().unwrap();
-    if state.focus != Focus::Data {
+    if self.state.lock().unwrap().focus != Focus::Data {
       return Ok(None);
     }
     if let Some(Event::Key(key)) = event {
@@ -119,9 +133,11 @@ impl<'a> Component for Data<'a> {
         },
         KeyCode::Down => {
           self.scrollable.scroll(ScrollDirection::Down);
+          self.update_child_after_scroll();
         },
         KeyCode::Up => {
           self.scrollable.scroll(ScrollDirection::Up);
+          self.update_child_after_scroll();
         },
         _ => {},
       }
@@ -130,11 +146,8 @@ impl<'a> Component for Data<'a> {
   }
 
   fn update(&mut self, action: Action) -> Result<Option<Action>> {
-    match action {
-      Action::Query(query) => {
-        self.scrollable.reset_scroll();
-      },
-      _ => {},
+    if let Action::Query(query) = action {
+      self.scrollable.reset_scroll();
     }
     Ok(None)
   }
@@ -156,7 +169,7 @@ impl<'a> Component for Data<'a> {
       DataState::Blank => {
         f.render_widget(Paragraph::new("").wrap(Wrap { trim: false }).block(block), area);
       },
-      DataState::HasResults => {
+      DataState::HasResults(table, requested_width, requested_height) => {
         if !state.table_buf_logged {
           self.scrollable.log();
           state.table_buf_logged = true;
@@ -173,7 +186,7 @@ impl<'a> Component for Data<'a> {
   }
 }
 
-// // TODO: see if this trait can be fixed and used
+// // TODO: see if this trait can be fixed and used in to_array()
 //
 // // based on: https://users.rust-lang.org/t/casting-traitobject-to-super-trait/33524/9
 // pub trait IntoComponent<'a, Super: ?Sized> {
