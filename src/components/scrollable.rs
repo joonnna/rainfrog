@@ -63,9 +63,9 @@ impl<'a> Scrollable<'a> {
     log::info!("available height: {}", available_height);
     let mut buf = Buffer::empty(Rect::new(0, 0, needed_width, available_height));
     render_child(buf.area, &mut buf);
-    let child_buffer = clamp(buf);
-    log::info!("child buffer: {:?}", child_buffer.area);
-    self.child_buffer = child_buffer;
+    buf = clamp(buf);
+    log::info!("child buffer: {:?}", buf.area);
+    self.child_buffer = buf;
     self.available_height = available_height;
     self.requested_height = requested_height;
     self

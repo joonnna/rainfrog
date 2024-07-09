@@ -1,4 +1,6 @@
 use std::{
+  borrow::BorrowMut,
+  cell::RefCell,
   collections::HashMap,
   sync::{Arc, Mutex},
   time::Duration,
@@ -45,6 +47,7 @@ pub struct Data<'a> {
   config: Config,
   scrollable: Scrollable<'a>,
   data_state: DataState<'a>,
+  table_state: RefCell<TableState>,
   state: Arc<Mutex<AppState>>,
 }
 
@@ -55,18 +58,20 @@ impl<'a> Data<'a> {
       config: Config::default(),
       scrollable: Scrollable::default(),
       data_state: DataState::Blank,
+      table_state: RefCell::new(TableState::default()),
       state,
     }
   }
 
   pub fn update_child_after_scroll(&mut self) {
     if let DataState::HasResults(table, requested_width, requested_height) = &self.data_state {
-      let table_state =
-        TableState::new().with_offset(self.scrollable.get_requested_child_offset().saturating_div(2) as usize);
+      let offset = self.scrollable.get_requested_child_offset();
+      self.table_state = RefCell::new(TableState::default().with_offset(offset as usize));
       self.scrollable.child(*requested_width, *requested_height, |area, buf| {
-        log::info!("updated table state: {:?}", table_state.clone());
-        ratatui::widgets::StatefulWidgetRef::render_ref(table, area, buf, &mut table_state.clone())
+        log::info!("updated table offset: {}", offset);
+        ratatui::widgets::StatefulWidgetRef::render_ref(table, area, buf, &mut *self.table_state.borrow_mut())
       });
+      self.scrollable.log();
     }
   }
 }
@@ -93,7 +98,7 @@ impl<'a> SettableDataTable<'a> for Data<'a> {
           );
           if let DataState::HasResults(table, requested_width, requested_height) = &self.data_state {
             self.scrollable.child(*requested_width, *requested_height, |area, buf| {
-              ratatui::widgets::WidgetRef::render_ref(table, area, buf)
+              ratatui::widgets::StatefulWidgetRef::render_ref(table, area, buf, &mut *self.table_state.borrow_mut())
             });
           }
         }
