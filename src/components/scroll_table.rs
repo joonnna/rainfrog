@@ -2,7 +2,10 @@ use color_eyre::eyre::Result;
 use ratatui::{
   buffer::Cell,
   prelude::*,
-  widgets::{Block, ScrollDirection as RatatuiScrollDir, Scrollbar, ScrollbarOrientation, ScrollbarState, WidgetRef},
+  widgets::{
+    Block, ScrollDirection as RatatuiScrollDir, Scrollbar, ScrollbarOrientation, ScrollbarState, Table, TableState,
+    WidgetRef,
+  },
 };
 use symbols::scrollbar;
 
@@ -16,33 +19,28 @@ pub enum ScrollDirection {
 }
 
 #[derive(Debug, Clone, Default)]
-pub struct Scrollable<'a> {
-  child_buffer: Buffer,
+pub struct ScrollTable<'a> {
+  child_table: Table<'a>,
+  child_table_state: TableState,
   parent_area: Rect,
   block: Option<Block<'a>>,
   x_offset: u16,
-  y_offset: u16,
-  max_offsets: MaxOffsets,
+  max_x_offset: u16,
 }
 
-impl<'a> Scrollable<'a> {
+impl<'a> ScrollTable<'a> {
   pub fn new() -> Self {
     Self {
-      child_buffer: Buffer::empty(Rect::new(0, 0, 0, 0)),
+      child_table: Table::default(),
+      child_table_state: TableState::default(),
       parent_area: Rect::new(0, 0, 0, 0),
       block: None,
       x_offset: 0,
-      y_offset: 0,
-      max_offsets: MaxOffsets { max_x_offset: 0, max_y_offset: 0 },
+      max_x_offset: 0,
     }
   }
 
-  pub fn child(&mut self, child_widget: Box<dyn WidgetRef>, max_width: u16, max_height: u16) -> &mut Self {
-    let mut buf = Buffer::empty(Rect::new(0, 0, max_width, max_height));
-    child_widget.render_ref(buf.area, &mut buf);
-    let child_buffer = clamp(buf);
-    log::info!("child buffer: {:?}", child_buffer.area);
-    self.child_buffer = child_buffer;
+  pub fn set_child_table(&mut self, child_table: Box<dyn WidgetRef>) -> &mut Self {
     self
   }
 
@@ -54,9 +52,7 @@ impl<'a> Scrollable<'a> {
   pub fn scroll(&mut self, direction: ScrollDirection) -> &mut Self {
     match direction {
       ScrollDirection::Left => self.x_offset = self.x_offset.saturating_sub(1),
-      ScrollDirection::Right => {
-        self.x_offset = Ord::min(self.x_offset.saturating_add(1), self.max_offsets.max_x_offset)
-      },
+      ScrollDirection::Right => self.x_offset = Ord::min(self.x_offset.saturating_add(1), self.max_x_offset),
       ScrollDirection::Up => self.y_offset = self.y_offset.saturating_sub(1),
       ScrollDirection::Down => self.y_offset = Ord::min(self.y_offset.saturating_add(1), self.max_offsets.max_y_offset),
     }
@@ -65,54 +61,16 @@ impl<'a> Scrollable<'a> {
 
   pub fn reset_scroll(&mut self) -> &mut Self {
     self.x_offset = 0;
-    self.y_offset = 0;
+    self.child_table_state = TableState::default();
     self
   }
 
   fn widget(&'a self) -> impl Widget + 'a {
     Renderer::new(self)
   }
-
-  pub fn log(&self) {
-    log::info!("logging");
-    let buf_height = self.child_buffer.area.height;
-    let buf_width = self.child_buffer.area.width;
-    for n in 0..buf_height {
-      let mut line: String = String::from("");
-      let cells =
-        self.child_buffer.content.to_vec()[((n * buf_width) as usize)..(((n + 1) * buf_width) as usize)].to_vec();
-      for cell in cells.iter() {
-        line += cell.symbol();
-      }
-      log::info!("{}", line.as_str());
-    }
-  }
-
-  pub fn debug_log(&self) {
-    let buf_height = self.child_buffer.area.height;
-    let buf_width = self.child_buffer.area.width;
-    for n in 0..buf_height {
-      let mut line: String = String::from("");
-      let cells =
-        self.child_buffer.content.to_vec()[((n * buf_width) as usize)..(((n + 1) * buf_width) as usize)].to_vec();
-      for cell in cells.iter() {
-        line += cell.symbol();
-      }
-      log::info!(
-        "rendering line {}/{}, length {}, last symbol {}, last symbol is blank {}:",
-        n,
-        buf_height,
-        line.len(),
-        cells[cells.len() - 1].symbol(),
-        cells[cells.len() - 1].symbol() == " "
-      );
-
-      log::info!("{}", line.as_str());
-    }
-  }
 }
 
-impl<'a> Component for Scrollable<'a> {
+impl<'a> Component for ScrollTable<'a> {
   fn draw(&mut self, f: &mut Frame<'_>, area: Rect) -> Result<()> {
     self.parent_area = area;
     self.max_offsets = get_max_offsets(&self.child_buffer, &self.parent_area, &self.block);
@@ -157,13 +115,7 @@ impl<'a> Component for Scrollable<'a> {
   }
 }
 
-#[derive(Debug, Clone, Default)]
-struct MaxOffsets {
-  max_x_offset: u16,
-  max_y_offset: u16,
-}
-
-fn get_max_offsets(child_buffer: &Buffer, parent_area: &Rect, parent_block: &Option<Block>) -> MaxOffsets {
+fn get_max_x_offset(child_buffer: &Buffer, parent_area: &Rect, parent_block: &Option<Block>) -> MaxOffsets {
   parent_block.render_ref(*parent_area, &mut child_buffer.clone());
   let render_area = parent_block.inner_if_some(*parent_area);
   if render_area.is_empty() {
@@ -208,11 +160,11 @@ fn clamp(buf: Buffer) -> Buffer {
 
 // based on scrolling approach from tui-textarea:
 // https://github.com/rhysd/tui-textarea/blob/main/src/widget.rs
-pub struct Renderer<'a>(&'a Scrollable<'a>);
+pub struct Renderer<'a>(&'a ScrollTable<'a>);
 
 impl<'a> Renderer<'a> {
-  pub fn new(scrollable: &'a Scrollable<'a>) -> Self {
-    Self(scrollable)
+  pub fn new(scrolltable: &'a ScrollTable<'a>) -> Self {
+    Self(scrolltable)
   }
 }
 
@@ -239,8 +191,4 @@ impl<'a> Widget for Renderer<'a> {
       }
     }
   }
-}
-
-fn get_row(content: &[Cell], row: u16, width: u16) -> Vec<Cell> {
-  content[((row * width) as usize)..(((row + 1) * width) as usize)].to_vec()
 }

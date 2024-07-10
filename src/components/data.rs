@@ -15,7 +15,7 @@ use crate::{
   action::Action,
   app::{App, AppState},
   components::{
-    scrollable::{ScrollDirection, Scrollable},
+    scroll_table::{ScrollDirection, ScrollTable},
     Component,
   },
   config::{Config, KeyBindings},
