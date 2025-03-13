@@ -37,6 +37,7 @@ use crate::{
   components::{
     data::{Data, DataComponent},
     editor::Editor,
+    favorites::Favorites,
     history::History,
     menu::{Menu, MenuComponent},
     Component,
@@ -80,6 +81,7 @@ pub struct Components<'a, DB> {
   pub editor: Box<dyn Component<DB>>,
   pub history: Box<dyn Component<DB>>,
   pub data: Box<dyn DataComponent<'a, DB>>,
+  pub favorites: Box<dyn Component<DB>>,
 }
 
 #[derive(Debug)]
@@ -117,6 +119,7 @@ where
     let editor = Editor::new();
     let history = History::new();
     let data = Data::new();
+    let favorites = Favorites::new();
     let config = Config::new()?;
     Ok(Self {
       components: Components {
@@ -124,6 +127,7 @@ where
         editor: Box::new(editor),
         history: Box::new(history),
         data: Box::new(data),
+        favorites: Box::new(favorites),
       },
       should_quit: false,
       mouse_mode_override,
@@ -174,6 +178,7 @@ where
     self.components.editor.register_action_handler(action_tx.clone())?;
     self.components.history.register_action_handler(action_tx.clone())?;
     self.components.data.register_action_handler(action_tx.clone())?;
+    self.components.favo.register_action_handler(action_tx.clone())?;
 
     self.components.menu.register_config_handler(self.config.clone())?;
     self.components.editor.register_config_handler(self.config.clone())?;
