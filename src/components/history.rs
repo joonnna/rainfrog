@@ -4,8 +4,8 @@ use ratatui::{prelude::*, symbols::scrollbar, widgets::*};
 use serde::{Deserialize, Serialize};
 use sqlx::{Database, Executor, Pool};
 use tokio::sync::mpsc::UnboundedSender;
-use tui_textarea::{Input, Key, Scrolling, TextArea};
 
+// use tui_textarea::{Input, Key, Scrolling, TextArea};
 use super::{Component, Frame};
 use crate::{
   action::{Action, MenuPreview},

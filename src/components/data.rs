@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use sqlparser::ast::Statement;
 use sqlx::{Database, Executor, Pool};
 use tokio::sync::{mpsc::UnboundedSender, Mutex};
-use tui_textarea::{Input, Key};
 
+// use tui_textarea::{Input, Key};
 use super::{scroll_table::SelectionMode, Frame};
 use crate::{
   action::Action,
@@ -273,114 +273,114 @@ impl<DB: Database> Component<DB> for Data<'_> {
   }
 
   fn handle_key_events(&mut self, key: KeyEvent, app_state: &AppState<'_, DB>) -> Result<Option<Action>> {
-    if app_state.focus != Focus::Data {
-      return Ok(None);
-    }
-    let input = Input::from(key);
-    match input {
-      Input { key: Key::Char('P'), .. } => {
-        if let DataState::HasResults(rows) = &self.data_state {
-          self.command_tx.clone().unwrap().send(Action::RequestExportData(rows.rows.len() as i64))?;
-        }
-      },
-      Input { key: Key::Right, .. } | Input { key: Key::Char('l'), .. } => {
-        self.scroll(ScrollDirection::Right);
-      },
-      Input { key: Key::Left, .. } | Input { key: Key::Char('h'), .. } => {
-        self.scroll(ScrollDirection::Left);
-      },
-      Input { key: Key::Down, .. } | Input { key: Key::Char('j'), .. } => {
-        self.scroll(ScrollDirection::Down);
-      },
-      Input { key: Key::Up, .. } | Input { key: Key::Char('k'), .. } => {
-        self.scroll(ScrollDirection::Up);
-      },
-      Input { key: Key::Char('e'), .. } | Input { key: Key::Char('w'), .. } => {
-        self.scrollable.next_column();
-      },
-      Input { key: Key::Char('b'), ctrl: false, .. } => {
-        self.scrollable.prev_column();
-      },
-      Input { key: Key::Char('g'), .. } => {
-        self.top();
-      },
-      Input { key: Key::Char('G'), .. } => {
-        self.bottom();
-      },
-      Input { key: Key::Char('0'), .. } => {
-        self.left();
-      },
-      Input { key: Key::Char('$'), .. } => {
-        self.right();
-      },
-      Input { key: Key::Char('{'), .. }
-      | Input { key: Key::Char('b'), ctrl: true, .. }
-      | Input { key: Key::PageUp, .. } => {
-        self.scrollable.pg_up();
-      },
-      Input { key: Key::Char('}'), .. }
-      | Input { key: Key::Char('f'), ctrl: true, .. }
-      | Input { key: Key::PageDown, .. } => {
-        self.scrollable.pg_down();
-      },
-      Input { key: Key::Char('v'), .. } => {
-        self.scrollable.transition_selection_mode(Some(SelectionMode::Cell));
-      },
-      Input { key: Key::Char('V'), .. } => {
-        self.scrollable.transition_selection_mode(Some(SelectionMode::Row));
-      },
-      Input { key: Key::Enter, .. } => {
-        match self.scrollable.get_selection_mode() {
-          Some(SelectionMode::Row) => {
-            self.scrollable.transition_selection_mode(Some(SelectionMode::Cell));
-          },
-          None | Some(SelectionMode::Copied) => {
-            self.scrollable.transition_selection_mode(Some(SelectionMode::Row));
-          },
-          _ => {},
-        };
-      },
-      Input { key: Key::Backspace, .. } => {
-        match self.scrollable.get_selection_mode() {
-          Some(SelectionMode::Row) => {
-            self.scrollable.transition_selection_mode(None);
-          },
-          Some(SelectionMode::Cell) => {
-            self.scrollable.transition_selection_mode(Some(SelectionMode::Row));
-          },
-          _ => {},
-        };
-      },
-      Input { key: Key::Char('y'), .. } => {
-        if let DataState::HasResults(Rows { rows, .. }) = &self.data_state {
-          let (x, y) = self.scrollable.get_cell_offsets();
-          let row = &rows[y];
-          match self.scrollable.get_selection_mode() {
-            Some(SelectionMode::Row) => {
-              let row_string = row.join(", ");
-              self.command_tx.clone().unwrap().send(Action::CopyData(row_string))?;
-              self.scrollable.transition_selection_mode(Some(SelectionMode::Copied));
-            },
-            Some(SelectionMode::Cell) => {
-              let cell = row[x as usize].clone();
-              self.command_tx.clone().unwrap().send(Action::CopyData(cell))?;
-              self.scrollable.transition_selection_mode(Some(SelectionMode::Copied));
-            },
-            _ => {},
-          }
-        } else if let DataState::Explain(text) = &self.data_state {
-          self.command_tx.clone().unwrap().send(Action::CopyData(text.to_string()))?;
-          self.scrollable.transition_selection_mode(Some(SelectionMode::Copied));
-        } else if let DataState::Error(err) = &self.data_state {
-          self.command_tx.clone().unwrap().send(Action::CopyData(err.to_string()))?;
-          self.scrollable.transition_selection_mode(Some(SelectionMode::Copied));
-        }
-      },
-      Input { key: Key::Esc, .. } => {
-        self.scrollable.transition_selection_mode(None);
-      },
-      _ => {},
-    };
+    // if app_state.focus != Focus::Data {
+    //  return Ok(None);
+    //}
+    // let input = Input::from(key);
+    // match input {
+    //  Input { key: Key::Char('P'), .. } => {
+    //    if let DataState::HasResults(rows) = &self.data_state {
+    //      self.command_tx.clone().unwrap().send(Action::RequestExportData(rows.rows.len() as i64))?;
+    //    }
+    //  },
+    //  Input { key: Key::Right, .. } | Input { key: Key::Char('l'), .. } => {
+    //    self.scroll(ScrollDirection::Right);
+    //  },
+    //  Input { key: Key::Left, .. } | Input { key: Key::Char('h'), .. } => {
+    //    self.scroll(ScrollDirection::Left);
+    //  },
+    //  Input { key: Key::Down, .. } | Input { key: Key::Char('j'), .. } => {
+    //    self.scroll(ScrollDirection::Down);
+    //  },
+    //  Input { key: Key::Up, .. } | Input { key: Key::Char('k'), .. } => {
+    //    self.scroll(ScrollDirection::Up);
+    //  },
+    //  Input { key: Key::Char('e'), .. } | Input { key: Key::Char('w'), .. } => {
+    //    self.scrollable.next_column();
+    //  },
+    //  Input { key: Key::Char('b'), ctrl: false, .. } => {
+    //    self.scrollable.prev_column();
+    //  },
+    //  Input { key: Key::Char('g'), .. } => {
+    //    self.top();
+    //  },
+    //  Input { key: Key::Char('G'), .. } => {
+    //    self.bottom();
+    //  },
+    //  Input { key: Key::Char('0'), .. } => {
+    //    self.left();
+    //  },
+    //  Input { key: Key::Char('$'), .. } => {
+    //    self.right();
+    //  },
+    //  Input { key: Key::Char('{'), .. }
+    //  | Input { key: Key::Char('b'), ctrl: true, .. }
+    //  | Input { key: Key::PageUp, .. } => {
+    //    self.scrollable.pg_up();
+    //  },
+    //  Input { key: Key::Char('}'), .. }
+    //  | Input { key: Key::Char('f'), ctrl: true, .. }
+    //  | Input { key: Key::PageDown, .. } => {
+    //    self.scrollable.pg_down();
+    //  },
+    //  Input { key: Key::Char('v'), .. } => {
+    //    self.scrollable.transition_selection_mode(Some(SelectionMode::Cell));
+    //  },
+    //  Input { key: Key::Char('V'), .. } => {
+    //    self.scrollable.transition_selection_mode(Some(SelectionMode::Row));
+    //  },
+    //  Input { key: Key::Enter, .. } => {
+    //    match self.scrollable.get_selection_mode() {
+    //      Some(SelectionMode::Row) => {
+    //        self.scrollable.transition_selection_mode(Some(SelectionMode::Cell));
+    //      },
+    //      None | Some(SelectionMode::Copied) => {
+    //        self.scrollable.transition_selection_mode(Some(SelectionMode::Row));
+    //      },
+    //      _ => {},
+    //    };
+    //  },
+    //  Input { key: Key::Backspace, .. } => {
+    //    match self.scrollable.get_selection_mode() {
+    //      Some(SelectionMode::Row) => {
+    //        self.scrollable.transition_selection_mode(None);
+    //      },
+    //      Some(SelectionMode::Cell) => {
+    //        self.scrollable.transition_selection_mode(Some(SelectionMode::Row));
+    //      },
+    //      _ => {},
+    //    };
+    //  },
+    //  Input { key: Key::Char('y'), .. } => {
+    //    if let DataState::HasResults(Rows { rows, .. }) = &self.data_state {
+    //      let (x, y) = self.scrollable.get_cell_offsets();
+    //      let row = &rows[y];
+    //      match self.scrollable.get_selection_mode() {
+    //        Some(SelectionMode::Row) => {
+    //          let row_string = row.join(", ");
+    //          self.command_tx.clone().unwrap().send(Action::CopyData(row_string))?;
+    //          self.scrollable.transition_selection_mode(Some(SelectionMode::Copied));
+    //        },
+    //        Some(SelectionMode::Cell) => {
+    //          let cell = row[x as usize].clone();
+    //          self.command_tx.clone().unwrap().send(Action::CopyData(cell))?;
+    //          self.scrollable.transition_selection_mode(Some(SelectionMode::Copied));
+    //        },
+    //        _ => {},
+    //      }
+    //    } else if let DataState::Explain(text) = &self.data_state {
+    //      self.command_tx.clone().unwrap().send(Action::CopyData(text.to_string()))?;
+    //      self.scrollable.transition_selection_mode(Some(SelectionMode::Copied));
+    //    } else if let DataState::Error(err) = &self.data_state {
+    //      self.command_tx.clone().unwrap().send(Action::CopyData(err.to_string()))?;
+    //      self.scrollable.transition_selection_mode(Some(SelectionMode::Copied));
+    //    }
+    //  },
+    //  Input { key: Key::Esc, .. } => {
+    //    self.scrollable.transition_selection_mode(None);
+    //  },
+    //  _ => {},
+    //};
     Ok(None)
   }
 
