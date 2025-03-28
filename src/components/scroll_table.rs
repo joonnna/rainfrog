@@ -40,6 +40,12 @@ pub struct ScrollTable<'a> {
   max_height: u16,
   x_offset: u16,
   y_offset: usize,
+  // Each entry contains the cumulative width of the current column index.
+  // e.g with 3 columns with the widths: [1, 3, 2] the vec would look like: [1, 4, 6]
+  // Necessary to support variable length columns.
+  cumulative_column_widths: Vec<u16>,
+  // Keeps track of the current column the cursor is on
+  current_column_index: usize,
   max_x_offset: u16,
   max_y_offset: usize,
   selection_mode: Option<SelectionMode>,
@@ -60,17 +66,31 @@ impl<'a> ScrollTable<'a> {
       max_x_offset: 0,
       max_y_offset: 0,
       selection_mode: None,
+      current_column_index: 0,
+      cumulative_column_widths: Vec::new(),
     }
   }
 
-  pub fn set_table(&mut self, table: Table<'a>, column_count: usize, row_count: usize, column_width: u16) -> &mut Self {
-    let requested_width = column_width.saturating_mul(column_count as u16);
+  pub fn set_table(
+    &mut self,
+    table: Table<'a>,
+    column_count: usize,
+    row_count: usize,
+    column_width: u16,
+    mut widths: Vec<u16>,
+  ) -> &mut Self {
+    let requested_width = widths.iter().sum::<u16>();
+    let cumulative_widths = widths.iter_mut().fold(0, |acc, x| {
+      *x += acc;
+      *x
+    });
     let max_height = u16::MAX.saturating_div(std::cmp::max(1, requested_width));
     self.table = table;
     self.column_width = column_width;
     self.requested_width = requested_width;
     self.max_height = max_height;
     self.max_y_offset = row_count.saturating_sub(1);
+    self.cumulative_column_widths = widths;
     self
   }
 
@@ -81,8 +101,24 @@ impl<'a> ScrollTable<'a> {
 
   pub fn scroll(&mut self, direction: ScrollDirection) -> &mut Self {
     match direction {
-      ScrollDirection::Left => self.x_offset = self.x_offset.saturating_sub(2),
-      ScrollDirection::Right => self.x_offset = std::cmp::min(self.x_offset.saturating_add(2), self.max_x_offset),
+      ScrollDirection::Left => {
+        let current_column_width = self.cumulative_column_widths[self.current_column_index];
+        let prev_column_width = self.cumulative_column_widths[self.current_column_index.saturating_sub(1)];
+
+        self.x_offset = self.x_offset.saturating_sub(2);
+        if current_column_width != prev_column_width && self.x_offset < current_column_width {
+          self.current_column_index = self.current_column_index.saturating_sub(1);
+        }
+      },
+      ScrollDirection::Right => {
+        let current_column_width = self.cumulative_column_widths[self.current_column_index];
+        let next_column_width = self.cumulative_column_widths[self.current_column_index.saturating_add(1)];
+
+        self.x_offset = std::cmp::min(self.x_offset.saturating_add(2), self.max_x_offset);
+        if current_column_width != next_column_width && self.x_offset > current_column_width {
+          self.current_column_index = self.current_column_index.saturating_add(1);
+        }
+      },
       ScrollDirection::Up => self.y_offset = self.y_offset.saturating_sub(1),
       ScrollDirection::Down => self.y_offset = std::cmp::min(self.y_offset.saturating_add(1), self.max_y_offset),
     }
@@ -90,28 +126,31 @@ impl<'a> ScrollTable<'a> {
   }
 
   pub fn next_column(&mut self) -> &mut Self {
-    if self.column_width == 0 {
+    log::info!("{:?}", self.cumulative_column_widths);
+    let len = self.cumulative_column_widths.len();
+    if self.current_column_index == len - 1 {
       return self;
     }
-    let x_over = self.x_offset % self.column_width;
-    self.x_offset =
-      std::cmp::min(self.x_offset.saturating_add(self.column_width).saturating_sub(x_over), self.max_x_offset);
+
+    log::info!("pre-next {}/{}", self.current_column_index, self.x_offset);
+    self.current_column_index = self.current_column_index.saturating_add(1);
+    self.x_offset = self.cumulative_column_widths[self.current_column_index];
+
+    log::info!("post-next {}/{}", self.current_column_index, self.x_offset);
     self
   }
 
   pub fn prev_column(&mut self) -> &mut Self {
-    if self.column_width == 0 {
+    log::info!("{:?}", self.cumulative_column_widths);
+    if self.current_column_index == 0 {
       return self;
     }
-    let x_over = self.x_offset % self.column_width;
-    match x_over {
-      0 => {
-        self.x_offset = self.x_offset.saturating_sub(self.column_width);
-      },
-      x => {
-        self.x_offset = self.x_offset.saturating_sub(x);
-      },
-    }
+
+    log::info!("pre-prev {}/{}", self.current_column_index, self.x_offset);
+    self.current_column_index = self.current_column_index.saturating_sub(1);
+    self.x_offset = self.cumulative_column_widths[self.current_column_index];
+
+    log::info!("post-prev {}/{}", self.current_column_index, self.x_offset);
     self
   }
 

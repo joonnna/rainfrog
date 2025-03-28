@@ -1,4 +1,8 @@
-use std::{collections::HashMap, sync::Arc, time::Duration};
+use std::{
+  collections::{hash_map::Entry, HashMap},
+  sync::Arc,
+  time::Duration,
+};
 
 use color_eyre::eyre::Result;
 use crossterm::{
@@ -207,13 +211,51 @@ impl<'a> SettableDataTable<'a> for Data<'a> {
           .height(2)
           .bottom_margin(1);
           let value_rows = rows.rows.iter().map(|r| Row::new(r.clone()).bottom_margin(1));
+
+          let mut max_widths: HashMap<u16, u16> = HashMap::new();
+
+          for row in &rows.rows {
+            for (column_index, c) in row.iter().enumerate() {
+              let len = c.len() as u16;
+              log::info!("{column_index} - {len} - {c}");
+              match max_widths.entry(column_index as u16) {
+                Entry::Occupied(mut e) => {
+                  if *e.get() < len {
+                    e.insert(len);
+                  }
+                },
+                Entry::Vacant(e) => {
+                  e.insert(len);
+                },
+              }
+            }
+          }
+
+          for (column_index, header) in rows.headers.iter().enumerate() {
+            let len = header.name.len().max(header.type_name.len()) as u16 + 1;
+            log::info!("{column_index} - {len}");
+            match max_widths.entry(column_index as u16) {
+              Entry::Occupied(mut e) => {
+                if *e.get() < len {
+                  e.insert(len);
+                }
+              },
+              Entry::Vacant(e) => {
+                e.insert(len);
+              },
+            }
+          }
+
+          let widths: Vec<u16> = max_widths.into_values().collect();
           let buf_table = Table::default()
             .rows(value_rows)
             .header(header_row)
             .style(Style::default())
             .column_spacing(1)
+            .widths(widths.clone())
             .row_highlight_style(Style::default().fg(Color::LightBlue).reversed().bold());
-          self.scrollable.set_table(buf_table, rows.headers.len(), rows.rows.len(), 36_u16);
+
+          self.scrollable.set_table(buf_table, rows.headers.len(), rows.rows.len(), 36_u16, widths);
           self.data_state = DataState::HasResults(rows);
         }
       },
